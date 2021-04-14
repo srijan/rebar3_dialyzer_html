@@ -27,7 +27,7 @@ init(State) ->
 do(State) ->
     Apps = rebar_state:project_apps(State),
     AppDirs =
-        lists:foreach(
+        lists:map(
           fun(App) ->
                   rebar_app_info:dir(App)
           end,
