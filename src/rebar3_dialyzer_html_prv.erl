@@ -26,7 +26,14 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     Apps = rebar_state:project_apps(State),
-    rebar_api:console("Apps = ~p", [Apps]),
+    AppDirs =
+        lists:foreach(
+          fun(App) ->
+                  rebar_app_info:dir(App)
+          end,
+          Apps
+         ),
+    rebar_api:console("AppDirs = ~p", [AppDirs]),
     {ok, State}.
 
 -spec format_error(any()) ->  iolist().

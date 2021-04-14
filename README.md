@@ -14,13 +14,13 @@ Use
 Add the plugin to your rebar config:
 
     {plugins, [
-        {rebar3_dialyzer_html, {git, "https://host/user/rebar3_dialyzer_html.git", {tag, "0.1.0"}}}
+        {rebar3_dialyzer_html, {git, "https://github.com/srijan/rebar3_dialyzer_html.git", {branch, "main"}}}
     ]}.
 
 Then just call your plugin directly in an existing application:
 
 
-    $ rebar3 rebar3_dialyzer_html
+    $ rebar3 dialyzer_html
     ===> Fetching rebar3_dialyzer_html
     ===> Compiling rebar3_dialyzer_html
     <Plugin Output>
