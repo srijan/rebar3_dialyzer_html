@@ -26,65 +26,124 @@ init(State) ->
 -spec do(rebar_state:t()) -> {ok, rebar_state:t()} | {error, string()}.
 do(State) ->
     rebar_api:info("Generating Dialyzer HTML Report", []),
+    Warnings = get_dialyzer_warnings_from_file(State),
+    WarningsDict = group_warnings_by_app(State, Warnings),
+    OutputHTML = build_html_output(State, Warnings, WarningsDict),
+    OutFile = write_html_to_file(State, OutputHTML),
+    rebar_api:info("HTML Report written to ~s", [OutFile]),
+    {ok, State}.
+
+-spec format_error(any()) -> iolist().
+format_error({dialyzer_output_file_error, File, Error}) ->
+    Error1 = file:format_error(Error),
+    io_lib:format("Unable to read dialyzer output file ~ts: ~ts", [File, Error1]);
+format_error({output_file_error, File, Error}) ->
+    Error1 = file:format_error(Error),
+    io_lib:format("Failed to write to ~ts: ~ts", [File, Error1]);
+format_error(Reason) ->
+    io_lib:format("~p", [Reason]).
+
+%% Internal Functions
+
+get_dialyzer_warnings_from_file(State) ->
     DialyzerOutFileName = get_dialyzer_output_file(State),
     rebar_api:debug("Dialyzer output file name: ~p", [DialyzerOutFileName]),
-
-
-    %% TODO: Break into functions
-
     {ok, Warnings} = file:consult(DialyzerOutFileName),
+    Warnings.
 
+get_dialyzer_output_file(State) ->
+    BaseDir = rebar_dir:base_dir(State),
+    Output = filename:join(BaseDir, default_dialyzer_output_file()),
+    case file:open(Output, [read]) of
+        {ok, File} ->
+            ok = file:close(File),
+            Output;
+        {error, Reason} ->
+            throw({dialyzer_output_file_error, Output, Reason})
+    end.
+
+default_dialyzer_output_file() ->
+    rebar_utils:otp_release() ++ ".dialyzer_warnings".
+
+
+%% Build warnings dict, key = app name
+group_warnings_by_app(State, Warnings) ->
+    RebarOpts = rebar_state:opts(State),
+    lists:foldl(
+      fun({_Tag, {Source, Line}, _Msg} = Warning, AccIn) ->
+              PlainMsg = dialyzer:format_warning(Warning),
+              FormattedMsg = rebar_dialyzer_format:format_warnings(RebarOpts, [Warning]),
+              FormattedMsgCleaned = remove_source_prefix(FormattedMsg),
+              %% Inserts a newline after sentence ends
+              FormattedMsgSpaced = re:replace(FormattedMsgCleaned, "(\\.)([^a-zA-Z0-9_\\.\\]])", "\\1\n\\2", [global]),
+
+              AppName = get_appname_for_src(State, Source),
+              SourceRelPath = get_source_rel_path(State, Source),
+              dict:append(
+                AppName,
+                #{app_name => AppName,
+                  source => SourceRelPath,
+                  line => Line,
+                  plain_message => PlainMsg,
+                  formatted_message => FormattedMsgSpaced
+                 },
+                AccIn)
+      end,
+      dict:new(),
+      Warnings
+     ).
+
+remove_source_prefix(FormattedMsg) ->
+    case re:split(FormattedMsg, "0m: ", [{return, list}]) of
+        [_IgnoredPrefix, ActualMessage] ->
+            ActualMessage;
+        _Else ->
+            FormattedMsg
+    end.
+
+get_appname_for_src(State, Source) ->
+    ProjectDir = rebar_state:dir(State),
+    Apps = rebar_state:project_apps(State),
+    case lists:filtermap(
+           fun(App) ->
+                   AppDir = rebar_app_info:dir(App),
+                   AppSrcDir = filename:join(AppDir, "src"),
+                   case string:prefix(Source, AppSrcDir) of
+                       nomatch -> false;
+                       _Matched -> {true, rebar_app_info:name(App)}
+                   end
+           end,
+           Apps
+          ) of
+        [AppName] ->
+            AppName;
+        _Other ->
+            case string:prefix(Source, ProjectDir) of
+                nomatch ->
+                    "Non-Project Deps";
+                _SomeMatch ->
+                    "Project Deps"
+            end
+    end.
+
+get_source_rel_path(State, Source) ->
+    ProjectDir = rebar_state:dir(State),
+    case string:prefix(Source, ProjectDir) of
+        nomatch ->
+            Source;
+        SourceRelPath ->
+            SourceRelPath
+    end.
+
+
+build_html_output(State, Warnings, WarningsDict) ->
     ProjectDir = rebar_state:dir(State),
     ProjectName = filename:basename(ProjectDir),
-    rebar_api:debug("Project Name: ~p", [ProjectName]),
-
-    RebarOpts = rebar_state:opts(State),
-
-    %% Build warnings dict, key = app name
-    WarningsDict =
-        lists:foldl(
-          fun({_Tag, {Source, Line}, _Msg} = Warning, AccIn) ->
-
-                  PlainMsg = dialyzer:format_warning(Warning),
-                  FormattedMsg = rebar_dialyzer_format:format_warnings(RebarOpts, [Warning]),
-                  FormattedMsgCleaned =
-                      case re:split(FormattedMsg, "0m: ", [{return, list}]) of
-                          [_IgnoredPrefix, ActualMessage] ->
-                              ActualMessage;
-                          _Else ->
-                              FormattedMsg
-                      end,
-
-                  %% Inserts a newline after sentence ends
-                  FormattedMsgSpaced = re:replace(FormattedMsgCleaned, "(\\.)([^a-zA-Z0-9_\\.\\]])", "\\1\n\\2", [global]),
-
-                  AppName = get_appname_for_src(State, Source),
-                  case string:prefix(Source, ProjectDir) of
-                      nomatch ->
-                          %% TODO: Some error outside the project ???
-                          AccIn;
-                      SourceRelPath ->
-                          %% Update dict
-                          dict:append(AppName,
-                                      #{app_name => AppName,
-                                        source => SourceRelPath,
-                                        line => erlang:integer_to_list(Line),
-                                        plain_message => PlainMsg,
-                                        formatted_message => FormattedMsgSpaced
-                                       },
-                                      AccIn)
-                  end
-          end,
-          dict:new(),
-          Warnings
-         ),
-
-    %% Build the output HTML
     Output = dict:fold(
                fun(AppName, AppWarnings, AccIn) ->
                        Count = length(AppWarnings),
                        AppHeader = [
-                                    "<h3>App Name: ", AppName, "</h3>",
+                                    "<h3>App: ", AppName, "</h3>",
                                     "<h4>Number of Warnings for this app: ",
                                     erlang:integer_to_list(Count), "</h3>",
                                     "<div class=\"container\">"
@@ -96,7 +155,7 @@ do(State) ->
                                               "<tr><td>",
                                               maps:get(source, Warning),
                                               "</td><td>",
-                                              maps:get(line, Warning),
+                                              erlang:integer_to_list(maps:get(line, Warning)),
                                               "</td><td>",
                                               "<div class=\"warning\">",
                                               "<div class=\"warning-text\">",
@@ -155,69 +214,9 @@ do(State) ->
                </script>",
               "</body></html>"
              ],
+    [Header, Output, Footer].
 
-    %% Write file
+write_html_to_file(_State, OutputHTML) ->
     OutFile = "_build/default/dialyzer_report.html",
-    ok = file:write_file(OutFile, [Header, Output, Footer]),
-
-    {ok, State}.
-
-%% -spec format_error(any()) ->  iolist().
-%% format_error(Reason) ->
-%%     io_lib:format("~p", [Reason]).
-
--spec format_error(any()) -> iolist().
-%% format_error({error_processing_apps, Error}) ->
-%%     io_lib:format("Error in dialyzing apps: ~ts", [Error]);
-%% format_error({dialyzer_warnings, Warnings}) ->
-%%     io_lib:format("Warnings occurred running dialyzer: ~b", [Warnings]);
-%% format_error({unknown_application, App}) ->
-%%     io_lib:format("Could not find application: ~ts", [App]);
-%% format_error({unknown_module, Mod}) ->
-%%     io_lib:format("Could not find module: ~ts", [Mod]);
-%% format_error({duplicate_module, Mod, File1, File2}) ->
-%%     io_lib:format("Duplicates of module ~ts: ~ts ~ts", [Mod, File1, File2]);
-format_error({dialyzer_output_file_error, File, Error}) ->
-    Error1 = file:format_error(Error),
-    io_lib:format("Unable to read dialyzer output file ~ts: ~ts", [File, Error1]);
-format_error({output_file_error, File, Error}) ->
-    Error1 = file:format_error(Error),
-    io_lib:format("Failed to write to ~ts: ~ts", [File, Error1]);
-format_error(Reason) ->
-    io_lib:format("~p", [Reason]).
-
-%% Internal Functions
-
-get_dialyzer_output_file(State) ->
-    BaseDir = rebar_dir:base_dir(State),
-    Output = filename:join(BaseDir, default_dialyzer_output_file()),
-    case file:open(Output, [read]) of
-        {ok, File} ->
-            ok = file:close(File),
-            Output;
-        {error, Reason} ->
-            throw({dialyzer_output_file_error, Output, Reason})
-    end.
-
-default_dialyzer_output_file() ->
-    rebar_utils:otp_release() ++ ".dialyzer_warnings".
-
-
-get_appname_for_src(State, Source) ->
-    Apps = rebar_state:project_apps(State),
-    case lists:filtermap(
-                  fun(App) ->
-                          AppDir = rebar_app_info:dir(App),
-                          AppSrcDir = filename:join(AppDir, "src"),
-                          case string:prefix(Source, AppSrcDir) of
-                              nomatch -> false;
-                              _Matched -> {true, rebar_app_info:name(App)}
-                          end
-                  end,
-                  Apps
-                 ) of
-        [AppName] ->
-            AppName;
-        _Other ->
-            "Unknown"
-    end.
+    ok = file:write_file(OutFile, OutputHTML),
+    OutFile.
