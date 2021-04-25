@@ -15,9 +15,13 @@ Use
 
 1. Make sure you're using rebar3 version `3.15` or later.
 
-2. Add the plugin to your rebar config:
+2. Add the plugin to your rebar config (via hex or via git):
 
        {plugins, [
+           %% from hex
+           {rebar3_dialyzer_html, "0.2.0"}
+    
+           %% or, latest from git
            {rebar3_dialyzer_html, {git, "https://github.com/srijan/rebar3_dialyzer_html.git", {branch, "main"}}}
        ]}.
 
