@@ -35,3 +35,9 @@ Use
        ===> Compiling rebar3_dialyzer_html
        ===> Generating Dialyzer HTML Report
        ===> HTML Report written to _build/default/dialyzer_report.html
+
+Changelog
+---------
+
+- 0.2.0: Basic functionality using JS library
+- 0.1.0: Pre-Release
