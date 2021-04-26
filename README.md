@@ -7,10 +7,18 @@ Intro blog post: https://www.srijn.net/erlang-dialyzer-html-reports-rebar3/
 
 Also available on hex: https://hex.pm/packages/rebar3_dialyzer_html
 
+
 Build
 -----
 
     $ rebar3 compile
+
+
+Sample Report
+-------------
+
+![Sample Dialyzer HTML Report](rebar3_dialyzer_report_sample.png)
+
 
 Use
 ---
