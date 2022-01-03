@@ -53,5 +53,6 @@ Use
 Changelog
 ---------
 
+- 0.3.0: Handle recent dialyzer versions reporting both line and column numbers
 - 0.2.0: Basic functionality using JS library
 - 0.1.0: Pre-Release

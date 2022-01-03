@@ -168,7 +168,7 @@ build_html_output(State, Warnings, WarningsDict) ->
                                  "<tr><td>",
                                  maps:get(source, Warning),
                                  "</td><td>",
-                                 erlang:integer_to_list(maps:get(line, Warning)),
+                                 io_lib:format("~p", [maps:get(line, Warning)]),
                                  "</td><td>",
                                  "<div class=\"warning\">",
                                  "<div class=\"warning-text\">",

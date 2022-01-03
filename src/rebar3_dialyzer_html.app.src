@@ -1,6 +1,6 @@
 {application, rebar3_dialyzer_html,
  [{description, "Generate an HTML report from dialyzer output"},
-  {vsn, "0.2.0"},
+  {vsn, "0.3.0"},
   {registered, []},
   {applications,
    [kernel,
