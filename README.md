@@ -3,7 +3,7 @@ rebar3_dialyzer_html
 
 A rebar plugin to generate HTML reported from dialyzer raw results.
 
-Intro blog post: https://www.srijn.net/erlang-dialyzer-html-reports-rebar3/
+Intro blog post: https://srijan.ch/erlang-dialyzer-html-reports-rebar3
 
 Also available on hex: https://hex.pm/packages/rebar3_dialyzer_html
 
